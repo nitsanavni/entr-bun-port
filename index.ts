@@ -86,7 +86,7 @@ async function main() {
 	let lastExecutionTime = 0;
 	const debounceDelay = options.all ? 0 : 100;
 
-	const _watchers = setupWatchers(options, async (file, isNew) => {
+	const watcherSetup = setupWatchers(options, async (file, isNew) => {
 		if (isNew && options.directories) {
 			debug("New file detected in watched directory");
 			console.error(`\nentr: directory altered`);
@@ -139,12 +139,14 @@ async function main() {
 	process.on("SIGINT", () => {
 		debug("SIGINT received - shutting down");
 		killCurrentProcess();
+		watcherSetup.cleanup();
 		process.exit(0);
 	});
 
 	process.on("SIGTERM", () => {
 		debug("SIGTERM received - shutting down");
 		killCurrentProcess();
+		watcherSetup.cleanup();
 		process.exit(0);
 	});
 
