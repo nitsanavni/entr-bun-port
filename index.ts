@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
-import { parseArgs } from "util";
+import { spawn } from "bun";
+import { watch } from "fs";
 
 const args = process.argv.slice(2);
 
@@ -96,6 +97,80 @@ async function readFilesFromStdin(): Promise<string[]> {
   return files;
 }
 
+let currentProcess: any = null;
+let shouldExit = false;
+
+async function clearScreen(options: Options) {
+  if (options.clear) {
+    process.stdout.write('\x1b[2J\x1b[H');
+  }
+}
+
+async function executeCommand(options: Options, triggeredFile?: string) {
+  if (currentProcess && options.restart) {
+    currentProcess.kill("SIGTERM");
+    await currentProcess.exited;
+    currentProcess = null;
+  }
+  
+  clearScreen(options);
+  
+  let commandToRun = [...options.command];
+  
+  if (commandToRun.includes('/_')) {
+    const fileToUse = triggeredFile || options.files[0];
+    commandToRun = commandToRun.map(arg => 
+      arg === '/_' ? fileToUse : arg
+    );
+  }
+  
+  if (options.shell) {
+    const shell = process.env.SHELL || '/bin/sh';
+    currentProcess = spawn({
+      cmd: [shell, '-c', commandToRun.join(' ')],
+      stdin: options.nonInteractive ? "ignore" : "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+  } else {
+    currentProcess = spawn({
+      cmd: commandToRun,
+      stdin: options.nonInteractive ? "ignore" : "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+  }
+  
+  const exitCode = await currentProcess.exited;
+  
+  if (options.shell && process.stdout.isTTY) {
+    console.log(`\n[${process.env.SHELL || '/bin/sh'}] exit: ${exitCode}`);
+  }
+  
+  if (options.exit) {
+    shouldExit = true;
+    process.exit(exitCode);
+  }
+  
+  currentProcess = null;
+  return exitCode;
+}
+
+function setupWatchers(files: string[], callback: (file: string) => void) {
+  const watchers: any[] = [];
+  
+  for (const file of files) {
+    const watcher = watch(file, (eventType, filename) => {
+      if (eventType === 'change') {
+        callback(file);
+      }
+    });
+    watchers.push(watcher);
+  }
+  
+  return watchers;
+}
+
 async function main() {
   const options = parseArguments();
   
@@ -108,9 +183,71 @@ async function main() {
     process.exit(1);
   }
   
-  console.log("Options:", options);
-  console.log("Files to watch:", options.files);
-  console.log("Command to run:", options.command.join(' '));
+  const existingFiles = options.files.filter(file => {
+    try {
+      const stat = Bun.file(file);
+      return true;
+    } catch {
+      console.error(`Warning: ${file} does not exist`);
+      return false;
+    }
+  });
+  
+  if (existingFiles.length === 0) {
+    console.error("No valid files to watch");
+    process.exit(1);
+  }
+  
+  options.files = existingFiles;
+  
+  if (!options.postpone) {
+    await executeCommand(options);
+  }
+  
+  console.error(`Watching ${options.files.length} file(s)...`);
+  
+  let lastExecutionTime = 0;
+  const debounceDelay = options.all ? 0 : 100;
+  
+  const watchers = setupWatchers(options.files, async (file) => {
+    const now = Date.now();
+    
+    if (!options.all && currentProcess) {
+      return;
+    }
+    
+    if (now - lastExecutionTime < debounceDelay) {
+      return;
+    }
+    
+    lastExecutionTime = now;
+    await executeCommand(options, file);
+  });
+  
+  if (!options.nonInteractive) {
+    process.stdin.setRawMode(true);
+    process.stdin.on('data', async (key) => {
+      const char = key.toString();
+      
+      if (char === ' ') {
+        await executeCommand(options);
+      } else if (char === 'q' || char === '\x03') {
+        if (currentProcess) {
+          currentProcess.kill();
+        }
+        process.exit(0);
+      }
+    });
+  }
+  
+  process.on('SIGINT', () => {
+    if (currentProcess) {
+      currentProcess.kill();
+    }
+    process.exit(0);
+  });
+  
+  await new Promise(() => {});
 }
 
 main().catch(err => {
