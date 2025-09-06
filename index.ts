@@ -55,8 +55,9 @@ function parseArguments(): Options {
 	};
 
 	let i = 0;
-	while (i < args.length && args[i].startsWith("-")) {
+	while (i < args.length && args[i]?.startsWith("-")) {
 		const flag = args[i];
+		if (!flag) break;
 
 		if (flag === "--") {
 			i++;
@@ -170,7 +171,7 @@ async function executeCommand(options: Options, triggeredFile?: string) {
 	let commandToRun = [...options.command];
 
 	if (commandToRun.includes("/_")) {
-		const fileToUse = resolve(triggeredFile || options.files[0]);
+		const fileToUse = resolve(triggeredFile || options.files[0] || "");
 		commandToRun = commandToRun.map((arg) => (arg === "/_" ? fileToUse : arg));
 	}
 
