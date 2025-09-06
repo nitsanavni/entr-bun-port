@@ -125,8 +125,10 @@ async function clearScreen(options: Options) {
 
 async function executeCommand(options: Options, triggeredFile?: string) {
   if (currentProcess && options.restart) {
-    currentProcess.kill("SIGTERM");
-    await currentProcess.exited;
+    try {
+      currentProcess.kill("SIGTERM");
+      await currentProcess.exited;
+    } catch {}
     currentProcess = null;
   }
   
@@ -158,7 +160,13 @@ async function executeCommand(options: Options, triggeredFile?: string) {
     });
   }
   
-  const exitCode = await currentProcess.exited;
+  let exitCode = 0;
+  try {
+    exitCode = await currentProcess.exited;
+  } catch (err) {
+    console.error(`Command failed: ${err}`);
+    exitCode = 1;
+  }
   
   if (options.shell && process.stdout.isTTY) {
     console.log(`\n[${process.env.SHELL || '/bin/sh'}] exit: ${exitCode}`);
@@ -282,23 +290,34 @@ async function main() {
     await executeCommand(options, file);
   });
   
-  if (!options.nonInteractive) {
-    process.stdin.setRawMode(true);
-    process.stdin.on('data', async (key) => {
-      const char = key.toString();
-      
-      if (char === ' ') {
-        await executeCommand(options);
-      } else if (char === 'q' || char === '\x03') {
-        if (currentProcess) {
-          currentProcess.kill();
+  if (!options.nonInteractive && process.stdin.isTTY) {
+    try {
+      process.stdin.setRawMode(true);
+      process.stdin.on('data', async (key) => {
+        const char = key.toString();
+        
+        if (char === ' ') {
+          await executeCommand(options);
+        } else if (char === 'q' || char === '\x03') {
+          if (currentProcess) {
+            currentProcess.kill();
+          }
+          process.exit(0);
         }
-        process.exit(0);
-      }
-    });
+      });
+    } catch (err) {
+      console.error("Warning: Could not set up keyboard input");
+    }
   }
   
   process.on('SIGINT', () => {
+    if (currentProcess) {
+      currentProcess.kill();
+    }
+    process.exit(0);
+  });
+  
+  process.on('SIGTERM', () => {
     if (currentProcess) {
       currentProcess.kill();
     }
