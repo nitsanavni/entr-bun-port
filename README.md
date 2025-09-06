@@ -1,4 +1,4 @@
-# entr-bun
+# entr-bun 🔄
 
 A Bun port of [entr](https://eradman.com/entrproject/) - run arbitrary commands when files change.
 
@@ -54,6 +54,28 @@ ls *.txt | bun run index.ts echo "Changed: /_"
 - `Space` - Execute the utility immediately
 - `q` - Quit (equivalent to Ctrl-C)
 
+## Debug Mode
+
+Enable debug logging to see detailed information about file watching, command execution, and internal events:
+
+```bash
+# Enable all debug logs
+DEBUG=entr:* bun run index.ts echo "test"
+
+# Enable specific modules
+DEBUG=entr:watcher bun run index.ts echo "test"
+DEBUG=entr:executor bun run index.ts echo "test"
+DEBUG=entr:main bun run index.ts echo "test"
+
+# Multiple modules
+DEBUG=entr:watcher,entr:executor bun run index.ts echo "test"
+```
+
+Debug modules:
+- `entr:main` - Application initialization, option parsing, and main flow
+- `entr:watcher` - File system watching events and directory monitoring
+- `entr:executor` - Command execution, process management, and exit codes
+
 ## Features
 
 - File watching with automatic command execution
@@ -64,5 +86,6 @@ ls *.txt | bun run index.ts echo "Changed: /_"
 - Interactive and non-interactive modes
 - File path placeholder replacement
 - Handles both 'change' and 'rename' file system events for better compatibility
+- **Debug logging** - built-in debug support with namespaced modules
 
 Built with [Bun](https://bun.sh) - a fast all-in-one JavaScript runtime.
