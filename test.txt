@@ -1,3 +1,9 @@
 Modified content
 Another change
 Test shell mode
+Testing bunx
+Another test with bunx
+Manual edit from vim
+Edit from Claude to trigger entr
+Another edit to test file watching
+Checking debug events

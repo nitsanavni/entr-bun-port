@@ -22,6 +22,9 @@ bun install
 # Watch files and run command on change
 ls *.js | bun run index.ts echo "Files changed!"
 
+# Automatically watch all git tracked files (default when no stdin)
+bun run index.ts echo "Git files changed!"
+
 # Clear screen before each run
 find . -name "*.ts" | bun run index.ts -c npm test
 
@@ -54,10 +57,12 @@ ls *.txt | bun run index.ts echo "Changed: /_"
 ## Features
 
 - File watching with automatic command execution
+- **Automatic git file detection** - defaults to watching all git tracked files when no stdin provided
 - Directory watching with new file detection
 - Process restarting for servers/daemons
 - Shell command evaluation
 - Interactive and non-interactive modes
 - File path placeholder replacement
+- Handles both 'change' and 'rename' file system events for better compatibility
 
 Built with [Bun](https://bun.sh) - a fast all-in-one JavaScript runtime.
