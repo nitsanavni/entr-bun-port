@@ -4,7 +4,7 @@ import { watch } from "fs";
 import { stat, statSync } from "fs";
 import { dirname, resolve } from "path";
 
-const args = process.argv.slice(2);
+const args = Bun.argv.slice(2);
 
 interface Options {
   all: boolean;
@@ -98,16 +98,15 @@ function parseArguments(): Options {
 }
 
 async function readFilesFromStdin(): Promise<string[]> {
-  const decoder = new TextDecoder();
   const files: string[] = [];
+  let buffer = "";
   
   for await (const chunk of Bun.stdin.stream()) {
-    const text = decoder.decode(chunk);
-    const lines = text.split('\n').filter(line => line.trim());
-    files.push(...lines);
+    buffer += Buffer.from(chunk).toString();
   }
   
-  return files;
+  const lines = buffer.split('\n').filter(line => line.trim());
+  return lines;
 }
 
 let currentProcess: any = null;
