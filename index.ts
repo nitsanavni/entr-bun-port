@@ -136,7 +136,7 @@ async function executeCommand(options: Options, triggeredFile?: string) {
   let commandToRun = [...options.command];
   
   if (commandToRun.includes('/_')) {
-    const fileToUse = triggeredFile || options.files[0];
+    const fileToUse = resolve(triggeredFile || options.files[0]);
     commandToRun = commandToRun.map(arg => 
       arg === '/_' ? fileToUse : arg
     );

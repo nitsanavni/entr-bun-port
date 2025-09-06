@@ -1,1 +1,3 @@
-Test file for entr
+Modified content
+Another change
+Test shell mode
