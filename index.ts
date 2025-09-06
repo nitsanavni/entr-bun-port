@@ -1,14 +1,17 @@
 #!/usr/bin/env bun
 
-import { spawn } from "bun";
 import { watch } from "fs";
+import { stat, statSync } from "fs";
+import { dirname, resolve } from "path";
 
 const args = process.argv.slice(2);
 
 interface Options {
   all: boolean;
   clear: boolean;
+  clearTwice: boolean;
   directories: boolean;
+  directoriesTwice: boolean;
   nonInteractive: boolean;
   postpone: boolean;
   restart: boolean;
@@ -16,6 +19,7 @@ interface Options {
   exit: boolean;
   command: string[];
   files: string[];
+  watchedDirs: Set<string>;
 }
 
 function printUsage() {
@@ -37,14 +41,17 @@ function parseArguments(): Options {
   const options: Options = {
     all: false,
     clear: false,
+    clearTwice: false,
     directories: false,
+    directoriesTwice: false,
     nonInteractive: false,
     postpone: false,
     restart: false,
     shell: false,
     exit: false,
     command: [],
-    files: []
+    files: [],
+    watchedDirs: new Set()
   };
 
   let i = 0;
@@ -59,8 +66,14 @@ function parseArguments(): Options {
     for (let j = 1; j < flag.length; j++) {
       switch (flag[j]) {
         case 'a': options.all = true; break;
-        case 'c': options.clear = true; break;
-        case 'd': options.directories = true; break;
+        case 'c': 
+          if (options.clear) options.clearTwice = true;
+          options.clear = true; 
+          break;
+        case 'd': 
+          if (options.directories) options.directoriesTwice = true;
+          options.directories = true; 
+          break;
         case 'n': options.nonInteractive = true; break;
         case 'p': options.postpone = true; break;
         case 'r': options.restart = true; break;
@@ -102,7 +115,11 @@ let shouldExit = false;
 
 async function clearScreen(options: Options) {
   if (options.clear) {
-    process.stdout.write('\x1b[2J\x1b[H');
+    if (options.clearTwice) {
+      process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
+    } else {
+      process.stdout.write('\x1b[2J\x1b[H');
+    }
   }
 }
 
@@ -126,18 +143,18 @@ async function executeCommand(options: Options, triggeredFile?: string) {
   
   if (options.shell) {
     const shell = process.env.SHELL || '/bin/sh';
-    currentProcess = spawn({
-      cmd: [shell, '-c', commandToRun.join(' ')],
+    currentProcess = Bun.spawn([shell, '-c', commandToRun.join(' ')], {
       stdin: options.nonInteractive ? "ignore" : "inherit",
       stdout: "inherit",
       stderr: "inherit",
+      env: { ...process.env, PAGER: process.env.PAGER || '/bin/cat' }
     });
   } else {
-    currentProcess = spawn({
-      cmd: commandToRun,
+    currentProcess = Bun.spawn(commandToRun, {
       stdin: options.nonInteractive ? "ignore" : "inherit",
       stdout: "inherit",
       stderr: "inherit",
+      env: { ...process.env, PAGER: process.env.PAGER || '/bin/cat' }
     });
   }
   
@@ -156,16 +173,34 @@ async function executeCommand(options: Options, triggeredFile?: string) {
   return exitCode;
 }
 
-function setupWatchers(files: string[], callback: (file: string) => void) {
+function setupWatchers(options: Options, callback: (file: string, isNew?: boolean) => void) {
   const watchers: any[] = [];
   
-  for (const file of files) {
+  for (const file of options.files) {
     const watcher = watch(file, (eventType, filename) => {
       if (eventType === 'change') {
         callback(file);
       }
     });
     watchers.push(watcher);
+  }
+  
+  if (options.directories) {
+    for (const dir of options.watchedDirs) {
+      const watcher = watch(dir, { recursive: false }, (eventType, filename) => {
+        if (eventType === 'rename' && filename) {
+          const fullPath = resolve(dir, filename);
+          try {
+            statSync(fullPath);
+            if (!options.directoriesTwice && filename.startsWith('.')) {
+              return;
+            }
+            callback(fullPath, true);
+          } catch {}
+        }
+      });
+      watchers.push(watcher);
+    }
   }
   
   return watchers;
@@ -183,15 +218,30 @@ async function main() {
     process.exit(1);
   }
   
-  const existingFiles = options.files.filter(file => {
+  const existingFiles: string[] = [];
+  const dirsToWatch = new Set<string>();
+  
+  for (const file of options.files) {
     try {
-      const stat = Bun.file(file);
-      return true;
+      const fileStat = statSync(file);
+      if (fileStat.isDirectory()) {
+        if (options.directories) {
+          dirsToWatch.add(resolve(file));
+        } else {
+          console.error(`Warning: ${file} is a directory (use -d flag to watch directories)`);
+        }
+      } else if (fileStat.isFile()) {
+        existingFiles.push(file);
+        if (options.directories) {
+          dirsToWatch.add(dirname(resolve(file)));
+        }
+      }
     } catch {
       console.error(`Warning: ${file} does not exist`);
-      return false;
     }
-  });
+  }
+  
+  options.watchedDirs = dirsToWatch;
   
   if (existingFiles.length === 0) {
     console.error("No valid files to watch");
@@ -209,7 +259,15 @@ async function main() {
   let lastExecutionTime = 0;
   const debounceDelay = options.all ? 0 : 100;
   
-  const watchers = setupWatchers(options.files, async (file) => {
+  const watchers = setupWatchers(options, async (file, isNew) => {
+    if (isNew && options.directories) {
+      console.error(`\nentr: directory altered`);
+      if (currentProcess) {
+        currentProcess.kill();
+      }
+      process.exit(2);
+    }
+    
     const now = Date.now();
     
     if (!options.all && currentProcess) {
