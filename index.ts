@@ -185,7 +185,8 @@ function setupWatchers(options: Options, callback: (file: string, isNew?: boolea
   
   for (const file of options.files) {
     const watcher = watch(file, (eventType, filename) => {
-      if (eventType === 'change') {
+      console.error(`[DEBUG] Event on ${file}: ${eventType}`);
+      if (eventType === 'change' || eventType === 'rename') {
         callback(file);
       }
     });
